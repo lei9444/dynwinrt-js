@@ -474,6 +474,10 @@ impl WinIIds {
   pub fn IAsyncOperationTextRecognizerIID() -> WinGUID {
     WinGUID(dynwinrt::IIds::IAsyncOperationTextRecognizer)
   }
+  #[napi]
+  pub fn IAsyncOperationRecognizedTextIID() -> WinGUID {
+    WinGUID(dynwinrt::IIds::IAsyncOperationRecognizedText)
+  }
 
   #[napi]
   pub fn RecognizedTextIID() -> WinGUID {

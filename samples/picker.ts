@@ -1,12 +1,4 @@
 import {
-    useDynwinrtAdd,
-    getComputerName,
-    getWindowsDirectory,
-    ComUri,
-    getUriVtable,
-    callMethod,
-    httpClientGetSync,
-    asyncProgressHstringToPromiseString,
     initWinappsdk,
     DynWinRtValue,
     WinIIds,
