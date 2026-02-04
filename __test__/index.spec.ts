@@ -7,17 +7,12 @@ import {
   ComUri,
   getUriVtable,
   callMethod,
-  WinRTType,
   httpClientGetSync,
   asyncProgressHstringToPromiseString,
-  WinAppSdkContext,
   initWinappsdk,
   DynWinRtValue,
   WinIIds,
-  WinGuid,
   DynWinRtType,
-  winrtValueToPromise,
-  runTestPicker,
 } from '../dist/index.js'
 
 test('sync function from native code', (t) => {
@@ -76,20 +71,24 @@ test('HttpClient Sync', async (t) => {
   t.is(typeof value, 'string')
 })
 
-test('run picker test in Rust', async (t) => {
-  await runTestPicker()
-  t.pass()
-})
+// test('run picker test in Rust', async (t) => {
+//   await runTestPicker()
+//   t.pass()
+// })
 
 test('file open picker', async (t) => {
   initWinappsdk(1, 8)
   const factory = DynWinRtValue.activationFactory('Microsoft.Windows.Storage.Pickers.FileOpenPicker')
   const FileOpenPicker = factory.cast(WinIIds.iFileOpenPickerFactoryIid())
-  const picker = FileOpenPicker.callSingleOut1(6, DynWinRtType.object(), DynWinRtValue.i64(0))
-  const picked_file_p = picker.callSingleOut0(13, DynWinRtType.object())
-  const picked_file = await winrtValueToPromise(picked_file_p);
-  // const path = picked_file.callSingleOut0(6, DynWinRtType.hstring()).toString()
-  // console.log('Picked file path:', path)
-  // await new Promise((resolve) => setTimeout(resolve, 5000))
+  const picker = FileOpenPicker.callSingleOut1(
+    6,
+    DynWinRtType.object(),
+    DynWinRtValue.i64(0))
+  const picked_file = await picker.callSingleOut0(
+    13,
+    DynWinRtType.iAsyncOperation(WinIIds.iAsyncOperationPickFileResultIid()))
+    .toPromise()
+  const path = picked_file.callSingleOut0(6, DynWinRtType.hstring());
+  console.log("Selected Path", path.toString())
   t.pass()
 })

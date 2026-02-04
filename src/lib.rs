@@ -46,7 +46,6 @@ impl DynWinRTType {
 }
 
 impl Into<dynwinrt::WinRTType> for DynWinRTType {
-
   fn into(self) -> dynwinrt::WinRTType {
     self.0
   }
@@ -87,7 +86,9 @@ impl NApiVTableSignature {
 }
 
 use windows::{
-  Foundation::Uri, Web::Http::{HttpClient, HttpProgress}, core::{AgileReference, HSTRING, IInspectable, IUnknown, Interface, h}
+  core::{h, AgileReference, IInspectable, IUnknown, Interface, HSTRING},
+  Foundation::Uri,
+  Web::Http::{HttpClient, HttpProgress},
 };
 use windows_future::{IAsyncActionWithProgress, IAsyncOperation, IAsyncOperationWithProgress};
 
@@ -179,6 +180,137 @@ pub async fn async_inspectable_to_promise_string(x: &AsyncIInspectableWrapper) -
 }
 
 #[napi]
+pub fn has_package_identity() -> bool {
+  use windows::ApplicationModel::AppInfo;
+  match AppInfo::Current() {
+    Ok(_) => true,
+    Err(_) => false,
+  }
+}
+
+#[napi]
+struct OCRDemo;
+
+#[napi]
+impl OCRDemo {
+  #[napi]
+  pub fn pick_image() -> DynWinRTValue {
+    let bitmap = pollster::block_on(dynwinrt::get_bitmap_from_file());
+    DynWinRTValue(bitmap)
+  }
+
+  #[napi]
+  pub fn print_ocr_lines(text: &DynWinRTValue) {
+    dynwinrt::print_ocr_paths(text.0.clone());
+  }
+
+  #[napi]
+  pub async fn create_recognizer() -> DynWinRTValue {
+    use dynwinrt::{IIds, WinRTType, WinRTValue};
+    let factory =
+      WinRTValue::from_activation_factory(h!("Microsoft.Windows.AI.Imaging.TextRecognizer"))
+        .unwrap();
+    let text_recongizer_factory = factory.cast(&IIds::ITextRecognizerStatics).unwrap();
+    let ready_state = text_recongizer_factory
+      .call_single_out_2(6, &WinRTType::I32, &[])
+      .unwrap()
+      .as_i32()
+      .unwrap();
+    println!("TextRecognizer ready state: {:?}", ready_state);
+
+    if (ready_state != 0) {
+      panic!("TextRecognizer is not ready");
+    }
+    println!("Creating TextRecognizer asynchronously...");
+
+    let recognizer_v = text_recongizer_factory
+      .call_single_out(
+        8,
+        &WinRTType::IAsyncOperation(IIds::IAsyncOperationTextRecognizer),
+        &[],
+      )
+      .unwrap();
+    println!("TextRecognizer created successfully");
+    let recognizer = (&(recognizer_v)).await.unwrap();
+    DynWinRTValue(recognizer)
+  }
+
+  #[napi]
+  pub fn create_image_buffer(bitmap: &DynWinRTValue) -> DynWinRTValue {
+    use dynwinrt::{IIds, WinRTType, WinRTValue};
+    let image_buffer_af =
+      WinRTValue::from_activation_factory(h!("Microsoft.Graphics.Imaging.ImageBuffer")).unwrap();
+    let ImageBufferStatic = image_buffer_af.cast(&IIds::IImageBufferStatics).unwrap();
+    let image_buffer = ImageBufferStatic
+      .call_single_out(
+        7,
+        &WinRTType::Object,
+        &[bitmap.0.cast(&IIds::ISoftwareBitmap).unwrap()],
+      )
+      .unwrap()
+      .as_object()
+      .unwrap();
+    println!("ImageBuffer created successfully");
+    DynWinRTValue(WinRTValue::Object(image_buffer))
+  }
+  #[napi]
+  pub async fn run_ocr_demo(
+    recognizer: &DynWinRTValue,
+    image_buffer: &DynWinRTValue,
+  ) -> DynWinRTValue {
+    use dynwinrt::{IIds, WinRTType, WinRTValue};
+    // let factory =
+    //     WinRTValue::from_activation_factory(h!("Microsoft.Windows.AI.Imaging.TextRecognizer"))
+    //         .unwrap();
+    // let text_recongizer_factory = factory.cast(&IIds::ITextRecognizerStatics).unwrap();
+    // let ready_state = text_recongizer_factory
+    //     .call_single_out_2(6, &WinRTType::I32, &[])
+    //     .unwrap()
+    //     .as_i32()
+    //     .unwrap();
+    // println!("TextRecognizer ready state: {:?}", ready_state);
+
+    // if (ready_state != 0) {
+    //     panic!("TextRecognizer is not ready");
+    // }
+    // println!("Creating TextRecognizer asynchronously...");
+
+    // let recognizer_v = text_recongizer_factory
+    //     .call_single_out(
+    //         8,
+    //         &WinRTType::IAsyncOperation(IIds::IAsyncOperationTextRecognizer),
+    //         &[],
+    //     )
+    //     .unwrap();
+    // println!("TextRecognizer created successfully");
+    // let recognizer = (&(recognizer_v)).await.unwrap();
+    let recognizer = &recognizer.0;
+    println!("SoftwareBitmap wrapped successfully");
+    // let bitmapt = bitmap.0.cast(&IIds::ISoftwareBitmap).unwrap();
+    // let image_buffer_af =
+    //   WinRTValue::from_activation_factory(h!("Microsoft.Graphics.Imaging.ImageBuffer")).unwrap();
+    // let ImageBufferStatic = image_buffer_af.cast(&IIds::IImageBufferStatics).unwrap();
+    // let image_buffer = ImageBufferStatic
+    //   .call_single_out(7, &WinRTType::Object, &[bitmapt])
+    //   .unwrap()
+    //   .as_object()
+    //   .unwrap();
+    let image_buffer = &image_buffer.0;
+    println!("ImageBuffer created from file successfully");
+    let res = recognizer
+      .call_single_out(
+        7,
+        &WinRTType::Object,
+        &[image_buffer.clone()],
+      )
+      .unwrap();
+    let result = res.cast(&IIds::RecognizedText).unwrap();
+    println!("Text recognition completed successfully");
+    DynWinRTValue(result)
+  }
+}
+
+#[napi]
 pub struct DynWinRTValue(dynwinrt::WinRTValue);
 
 #[napi]
@@ -201,6 +333,13 @@ impl DynWinRTValue {
   pub fn hstring(value: String) -> DynWinRTValue {
     DynWinRTValue(dynwinrt::WinRTValue::HString(HSTRING::from(value)))
   }
+
+  #[napi]
+  pub async fn to_promise(&self) -> DynWinRTValue {
+    let v = (&self.0).await.unwrap();
+    DynWinRTValue(v)
+  }
+
   #[napi]
   pub fn to_string(&self) -> String {
     match &self.0 {
@@ -213,11 +352,19 @@ impl DynWinRTValue {
   }
 
   #[napi]
-  pub fn call_single_out_0(
-    &self,
-    method_index: i32,
-    return_type: &DynWinRTType
-  ) -> DynWinRTValue {
+  pub fn call_0(&self, method_index: i32, return_type: &DynWinRTType) -> DynWinRTValue {
+    let result = self
+      .0
+      .call_single_out_2(method_index as usize, &return_type.0, &[]);
+    match &result {
+      Err(e) => println!("call_0 failed: {}", e.message()),
+      _ => {}
+    }
+    DynWinRTValue(result.unwrap())
+  }
+
+  #[napi]
+  pub fn call_single_out_0(&self, method_index: i32, return_type: &DynWinRTType) -> DynWinRTValue {
     let result = self
       .0
       .call_single_out(method_index as usize, &return_type.0, &[]);
@@ -228,13 +375,12 @@ impl DynWinRTValue {
     DynWinRTValue(result.unwrap())
   }
 
-
   #[napi]
   pub fn call_single_out_1(
     &self,
     method_index: i32,
     return_type: &DynWinRTType,
-    v1: &DynWinRTValue
+    v1: &DynWinRTValue,
   ) -> DynWinRTValue {
     let result = self
       .0
@@ -250,6 +396,22 @@ impl DynWinRTValue {
   pub fn cast(&self, iid: &WinGUID) -> DynWinRTValue {
     let result = self.0.cast(&iid.0).unwrap();
     DynWinRTValue(result)
+  }
+
+  #[napi]
+  pub fn to_number(&self) -> i32 {
+    match &self.0 {
+      dynwinrt::WinRTValue::I32(i) => *i,
+      _ => panic!("Cannot convert to number"),
+    }
+  }
+
+  #[napi]
+  pub fn as_raw(&self) -> i64 {
+    match &self.0 {
+      dynwinrt::WinRTValue::Object(o) => o.as_raw() as i64,
+      _ => panic!("Cannot get raw pointer from non-object"),
+    }
   }
 }
 
@@ -276,7 +438,9 @@ pub struct WinIIds(dynwinrt::IIds);
 
 #[napi]
 pub async fn run_test_picker() {
-  dynwinrt::test_pick_open_picker_full_dynamic().await.unwrap();
+  dynwinrt::test_pick_open_picker_full_dynamic()
+    .await
+    .unwrap();
 }
 
 #[napi]
@@ -289,6 +453,31 @@ impl WinIIds {
   #[napi]
   pub fn IAsyncOperationPickFileResultIID() -> WinGUID {
     WinGUID(dynwinrt::IIds::IAsyncOperationPickFileResult)
+  }
+
+  #[napi]
+  pub fn ITextRecognizerStaticsIID() -> WinGUID {
+    WinGUID(dynwinrt::IIds::ITextRecognizerStatics)
+  }
+
+  #[napi]
+  pub fn IImageBufferStaticsIID() -> WinGUID {
+    WinGUID(dynwinrt::IIds::IImageBufferStatics)
+  }
+
+  #[napi]
+  pub fn ISoftwareBitmapIID() -> WinGUID {
+    WinGUID(dynwinrt::IIds::ISoftwareBitmap)
+  }
+
+  #[napi]
+  pub fn IAsyncOperationTextRecognizerIID() -> WinGUID {
+    WinGUID(dynwinrt::IIds::IAsyncOperationTextRecognizer)
+  }
+
+  #[napi]
+  pub fn RecognizedTextIID() -> WinGUID {
+    WinGUID(dynwinrt::IIds::RecognizedText)
   }
 }
 

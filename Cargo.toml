@@ -14,6 +14,7 @@ napi-derive = "3.0.0"
 dynwinrt = { path = "../dynwinrt" }
 windows-future = "0.3.2"
 windows-string = "0.0.0"
+pollster = "0.4.0"
 
 [dependencies.windows]
 version = ">=0.59, <=0.62"
