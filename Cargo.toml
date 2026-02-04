@@ -11,8 +11,9 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "3", features = ["async", "tokio_rt"] }
 napi-derive = "3.0.0"
-dynwinrt = { path = "D:/Code/dynwinrt" }
+dynwinrt = { path = "../dynwinrt" }
 windows-future = "0.3.2"
+windows-string = "0.0.0"
 
 [dependencies.windows]
 version = ">=0.59, <=0.62"

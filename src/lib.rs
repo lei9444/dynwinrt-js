@@ -5,6 +5,8 @@ mod winrt_service;
 
 mod astr;
 
+use std::rc::Rc;
+
 use dynwinrt;
 use napi::{
   bindgen_prelude::{JsObjectValue, Promise, PromiseRaw, Result},
@@ -13,21 +15,40 @@ use napi::{
 use napi_derive::napi;
 
 #[napi]
-pub enum WinRTType {
-  I32,
-  Object,
-  HString,
-  HResult,
+pub struct DynWinRTType(dynwinrt::WinRTType);
+
+#[napi]
+impl DynWinRTType {
+  #[napi]
+  pub fn i32() -> Self {
+    DynWinRTType(dynwinrt::WinRTType::I32)
+  }
+
+  #[napi]
+  pub fn i64() -> Self {
+    DynWinRTType(dynwinrt::WinRTType::I64)
+  }
+
+  #[napi]
+  pub fn hstring() -> Self {
+    DynWinRTType(dynwinrt::WinRTType::HString)
+  }
+
+  #[napi]
+  pub fn object() -> Self {
+    DynWinRTType(dynwinrt::WinRTType::Object)
+  }
+
+  #[napi]
+  pub fn IAsyncOperation(iid: &WinGUID) -> Self {
+    DynWinRTType(dynwinrt::WinRTType::IAsyncOperation(iid.0))
+  }
 }
 
-impl Into<dynwinrt::WinRTType> for WinRTType {
+impl Into<dynwinrt::WinRTType> for DynWinRTType {
+
   fn into(self) -> dynwinrt::WinRTType {
-    match self {
-      WinRTType::I32 => dynwinrt::WinRTType::I32,
-      WinRTType::Object => dynwinrt::WinRTType::Object,
-      WinRTType::HString => dynwinrt::WinRTType::HString,
-      WinRTType::HResult => dynwinrt::WinRTType::HResult,
-    }
+    self.0
   }
 }
 
@@ -38,21 +59,35 @@ pub async fn http_client_get_async(uri: String) -> Result<String> {
 }
 
 #[napi]
-pub struct NApiVTableSignature(dynwinrt::VTableSignature);
+pub struct NApiVTableSignature(dynwinrt::InterfaceSignature);
+
+#[napi]
+#[derive(Debug, Clone, Copy)]
+pub struct WinGUID(windows::core::GUID);
+
+#[napi]
+impl WinGUID {
+  #[napi]
+  pub fn parse(guid_str: String) -> Self {
+    let guid = windows::core::GUID::try_from(guid_str.as_str()).unwrap();
+    WinGUID(guid)
+  }
+}
 
 #[napi]
 impl NApiVTableSignature {
   #[napi(constructor)]
-  pub fn new() -> Self {
-    let iface_sig = dynwinrt::VTableSignature::new();
+  pub fn define_from_iinspectable() -> Self {
+    let iface_sig = dynwinrt::InterfaceSignature::define_from_iinspectable(
+      Default::default(),
+      Default::default(),
+    );
     NApiVTableSignature(iface_sig)
   }
 }
 
 use windows::{
-  core::{AgileReference, IUnknown, Interface, HSTRING},
-  Foundation::Uri,
-  Web::Http::HttpProgress,
+  Foundation::Uri, Web::Http::{HttpClient, HttpProgress}, core::{AgileReference, HSTRING, IInspectable, IUnknown, Interface, h}
 };
 use windows_future::{IAsyncActionWithProgress, IAsyncOperation, IAsyncOperationWithProgress};
 
@@ -108,6 +143,182 @@ impl Clone for ComObj {
 }
 
 #[napi]
+pub struct AsyncHSTRINGWrapper(IAsyncOperation<HSTRING>);
+#[napi]
+pub async fn async_hstring_to_promise_string(x: &AsyncHSTRINGWrapper) -> String {
+  let r = x.0.clone().await.unwrap();
+  r.to_string()
+}
+
+#[napi]
+pub struct IUnknownWrapper(IUnknown);
+#[napi]
+pub struct AsyncUriWrapper(IAsyncOperation<HttpClient>);
+// this compiles
+#[napi]
+pub async fn async_concrete_type_to_promise(x: &AsyncUriWrapper) -> String {
+  let c = x.0.clone().await.unwrap();
+  let r: IInspectable = c.cast().unwrap();
+  let i = unsafe { IInspectable::from_raw(std::ptr::null_mut()) };
+  // IAsyncOperation<IInspectable>::from_raw
+  let i2: IAsyncOperation<IInspectable> = i.cast().unwrap();
+
+  r.GetRuntimeClassName().unwrap().to_string()
+}
+
+#[napi]
+pub struct IInspectableWrapper(IInspectable);
+#[napi]
+pub struct AsyncIInspectableWrapper(IAsyncOperation<IInspectable>);
+
+// this function compiles
+#[napi]
+pub async fn async_inspectable_to_promise_string(x: &AsyncIInspectableWrapper) -> String {
+  let r = x.0.clone().await.unwrap();
+  r.GetRuntimeClassName().unwrap().to_string()
+}
+
+#[napi]
+pub struct DynWinRTValue(dynwinrt::WinRTValue);
+
+#[napi]
+impl DynWinRTValue {
+  #[napi]
+  pub fn activation_factory(name: String) -> DynWinRTValue {
+    // let f = dynwinrt::ro_get_activation_factory_2(h!("Microsoft.Windows.Storage.Pickers.FileOpenPicker")).unwrap();
+    DynWinRTValue(dynwinrt::ro_get_activation_factory_2(&HSTRING::from(name)).unwrap())
+  }
+
+  #[napi]
+  pub fn i64(value: i64) -> DynWinRTValue {
+    DynWinRTValue(dynwinrt::WinRTValue::I64(value))
+  }
+  #[napi]
+  pub fn i32(value: i32) -> DynWinRTValue {
+    DynWinRTValue(dynwinrt::WinRTValue::I32(value))
+  }
+  #[napi]
+  pub fn hstring(value: String) -> DynWinRTValue {
+    DynWinRTValue(dynwinrt::WinRTValue::HString(HSTRING::from(value)))
+  }
+  #[napi]
+  pub fn to_string(&self) -> String {
+    match &self.0 {
+      dynwinrt::WinRTValue::HString(s) => s.to_string(),
+      dynwinrt::WinRTValue::I32(i) => i.to_string(),
+      dynwinrt::WinRTValue::I64(i) => i.to_string(),
+      dynwinrt::WinRTValue::Object(o) => format!("Object: {:?}", o),
+      _ => "Unsupported type".to_string(),
+    }
+  }
+
+  #[napi]
+  pub fn call_single_out_0(
+    &self,
+    method_index: i32,
+    return_type: &DynWinRTType
+  ) -> DynWinRTValue {
+    let result = self
+      .0
+      .call_single_out(method_index as usize, &return_type.0, &[]);
+    match &result {
+      Err(e) => println!("call_single_out_0 failed: {}", e.message()),
+      _ => {}
+    }
+    DynWinRTValue(result.unwrap())
+  }
+
+
+  #[napi]
+  pub fn call_single_out_1(
+    &self,
+    method_index: i32,
+    return_type: &DynWinRTType,
+    v1: &DynWinRTValue
+  ) -> DynWinRTValue {
+    let result = self
+      .0
+      .call_single_out(method_index as usize, &return_type.0, &[v1.0.clone()]);
+    match &result {
+      Err(e) => println!("call_single_out_0 failed: {}", e.message()),
+      _ => {}
+    }
+    DynWinRTValue(result.unwrap())
+  }
+
+  #[napi]
+  pub fn cast(&self, iid: &WinGUID) -> DynWinRTValue {
+    let result = self.0.cast(&iid.0).unwrap();
+    DynWinRTValue(result)
+  }
+}
+
+#[napi]
+struct WinAppSDKContext(dynwinrt::WinAppSdkContext);
+
+#[napi]
+pub fn init_winappsdk(major: u32, minor: u32) {
+  WinAppSDKContext(dynwinrt::initialize_winappsdk(major, minor).unwrap());
+}
+
+#[napi]
+pub async fn winrt_value_to_promise(x: &DynWinRTValue) -> DynWinRTValue {
+  println!("winrt_value_to_promise called");
+  let v = (&x.0).await.unwrap();
+  println!("winrt_value_to_promise completed");
+  DynWinRTValue(v)
+}
+unsafe impl Send for DynWinRTValue {}
+unsafe impl Sync for DynWinRTValue {}
+
+#[napi]
+pub struct WinIIds(dynwinrt::IIds);
+
+#[napi]
+pub async fn run_test_picker() {
+  dynwinrt::test_pick_open_picker_full_dynamic().await.unwrap();
+}
+
+#[napi]
+impl WinIIds {
+  #[napi]
+  pub fn IFileOpenPickerFactoryIID() -> WinGUID {
+    WinGUID(dynwinrt::IIds::IFileOpenPickerFactory)
+  }
+
+  #[napi]
+  pub fn IAsyncOperationPickFileResultIID() -> WinGUID {
+    WinGUID(dynwinrt::IIds::IAsyncOperationPickFileResult)
+  }
+}
+
+// this gives a compile error of Send/Sync is required,
+// which indicate that both argument and return type must be Send + Sync for napi
+#[napi]
+pub async fn async_inspectable_to_promise_inspectable(
+  x: &AsyncIInspectableWrapper,
+) -> IInspectableWrapper {
+  let r = x.0.clone().await.unwrap();
+  IInspectableWrapper(r)
+}
+// add following by pass compile error
+unsafe impl Send for IInspectableWrapper {}
+unsafe impl Sync for IInspectableWrapper {}
+
+// this gives multiple compiles error:
+// 1 IUnknown is not RuntimeType so IAsyncOperation<IUnknown> is not valid
+// 2 even wrapped in IAsyncOperation, IAsyncOperation<IUnknown> is not Send + Sync from napi's perspective
+#[napi]
+pub struct IAsyncIUnknownWrapper(IAsyncOperation<IInspectable>);
+// #[napi]
+// pub async fn unwrap_async_iunknown2(x: &IAsyncIUnknownWrapper) -> String {
+//   let async_op: IAsyncOperation<IUnknown> = x.0.cast().unwrap();
+//   let r: IInspectable = async_op.await.cast().unwrap();
+//   r.GetRuntimeClassName().unwrap().to_string()
+// }
+// fn foo(x: IAsyncOperation<IInspectable>) {}
+
+#[napi]
 pub fn from_async_string_with_http_progress(o: &ComObj) -> napi::Result<()> {
   Ok(())
 }
@@ -132,7 +343,7 @@ impl Drop for ComObjWrapper {
 }
 
 #[napi]
-struct DynWinRTVTable(dynwinrt::VTableSignature);
+struct DynWinRTVTable(dynwinrt::InterfaceSignature);
 
 #[napi]
 impl ComUri {

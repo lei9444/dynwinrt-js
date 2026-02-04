@@ -10,6 +10,14 @@ import {
   WinRTType,
   httpClientGetSync,
   asyncProgressHstringToPromiseString,
+  WinAppSdkContext,
+  initWinappsdk,
+  DynWinRtValue,
+  WinIIds,
+  WinGuid,
+  DynWinRtType,
+  winrtValueToPromise,
+  runTestPicker,
 } from '../dist/index.js'
 
 test('sync function from native code', (t) => {
@@ -52,11 +60,11 @@ test('WinRT URI and VTable', (t) => {
   t.is(absoluteUri, 'https')
 })
 
-test('WinRTType Enum', (t) => {
-  t.is(WinRTType.I32, 0)
-  t.is(WinRTType.Object, 1)
-  t.is(WinRTType.HString, 2)
-  t.is(WinRTType.HResult, 3)
+test('WinRTType build', (t) => {
+  t.truthy(DynWinRtType.i32())
+  t.truthy(DynWinRtType.hstring())
+  t.truthy(DynWinRtType.object())
+  t.truthy(DynWinRtType.iAsyncOperation(WinIIds.iAsyncOperationPickFileResultIid()))
 })
 
 test('HttpClient Sync', async (t) => {
@@ -66,4 +74,22 @@ test('HttpClient Sync', async (t) => {
   const value = await asyncProgressHstringToPromiseString(asyncOperation)
   t.truthy(value)
   t.is(typeof value, 'string')
+})
+
+test('run picker test in Rust', async (t) => {
+  await runTestPicker()
+  t.pass()
+})
+
+test('file open picker', async (t) => {
+  initWinappsdk(1, 8)
+  const factory = DynWinRtValue.activationFactory('Microsoft.Windows.Storage.Pickers.FileOpenPicker')
+  const FileOpenPicker = factory.cast(WinIIds.iFileOpenPickerFactoryIid())
+  const picker = FileOpenPicker.callSingleOut1(6, DynWinRtType.object(), DynWinRtValue.i64(0))
+  const picked_file_p = picker.callSingleOut0(13, DynWinRtType.object())
+  const picked_file = await winrtValueToPromise(picked_file_p);
+  // const path = picked_file.callSingleOut0(6, DynWinRtType.hstring()).toString()
+  // console.log('Picked file path:', path)
+  // await new Promise((resolve) => setTimeout(resolve, 5000))
+  t.pass()
 })
