@@ -32,6 +32,7 @@ features = [
     "Win32_System_Com",
     "Foundation",
     "Web_Http",
+    "Devices_Geolocation",
 ]
 
 

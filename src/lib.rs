@@ -4,6 +4,7 @@
 mod winrt_service;
 
 mod astr;
+mod value_type;
 
 use std::rc::Rc;
 
@@ -312,6 +313,19 @@ impl OCRDemo {
 
 #[napi]
 pub struct DynWinRTValue(dynwinrt::WinRTValue);
+
+impl DynWinRTValue {
+  pub(crate) fn as_raw_ptr(&self) -> *mut std::ffi::c_void {
+    match &self.0 {
+      dynwinrt::WinRTValue::Object(o) => o.as_raw(),
+      _ => panic!("as_raw_ptr: not an Object"),
+    }
+  }
+
+  pub(crate) fn from_iunknown(obj: windows::core::IUnknown) -> Self {
+    DynWinRTValue(dynwinrt::WinRTValue::Object(obj))
+  }
+}
 
 #[napi]
 impl DynWinRTValue {
