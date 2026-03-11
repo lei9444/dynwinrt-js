@@ -1,39 +1,82 @@
 import {
     DynWinRtValue,
-    WinIIds,
     DynWinRtType,
+    DynWinRtMethodSig,
+    WinIIds,
     OcrDemo,
     hasPackageIdentity,
 } from '../dist/index.js'
 
-async function createRecognizer() {
-    const factory = DynWinRtValue.activationFactory('Microsoft.Windows.AI.Imaging.TextRecognizer')
-                                 .cast(WinIIds.iTextRecognizerStaticsIid());
-    const readyState = factory.call0(6, DynWinRtType.i32()).toNumber();
-    console.log('TextRecognizer ready state:', readyState);
-    const recognizer = await factory.callSingleOut0(8,
-        DynWinRtType.iAsyncOperation(WinIIds.iAsyncOperationTextRecognizerIid())
-    ).toPromise();
-    return recognizer;
-}
+// ======================================================================
+// Register interfaces (once)
+// ======================================================================
 
-function createImageBuffer(bitmap: DynWinRtValue) {
-    const factory = DynWinRtValue.activationFactory('Microsoft.Graphics.Imaging.ImageBuffer')
-                                 .cast(WinIIds.iImageBufferStaticsIid());
-    const imageBuffer = factory.callSingleOut1(7, DynWinRtType.object(), bitmap);
-    return imageBuffer;
-}
+// ITextRecognizerStatics: GetReadyState, EnsureReadyAsync, CreateAsync
+const iTextRecognizerStatics = DynWinRtType.registerInterface(
+    "ITextRecognizerStatics",
+    WinIIds.iTextRecognizerStaticsIid(),
+)
+    .addMethod("GetReadyState", new DynWinRtMethodSig().addOut(DynWinRtType.i32()))
+    .addMethod("EnsureReadyAsync", new DynWinRtMethodSig().addOut(DynWinRtType.object()))
+    .addMethod("CreateAsync", new DynWinRtMethodSig().addOut(
+        DynWinRtType.iAsyncOperation(
+            DynWinRtType.runtimeClass(
+                'Microsoft.Windows.AI.Imaging.TextRecognizer',
+                WinIIds.textRecognizerIid(),
+            )
+        )))
+
+// IImageBufferStatics: CreateForSoftwareBitmap
+const iImageBufferStatics = DynWinRtType.registerInterface(
+    "IImageBufferStatics",
+    WinIIds.iImageBufferStaticsIid(),
+)
+    .addMethod("CreateForSoftwareBitmap", new DynWinRtMethodSig()
+        .addIn(DynWinRtType.object()).addOut(DynWinRtType.object()))
+
+// ITextRecognizer: RecognizeTextFromImageAsync
+const iTextRecognizer = DynWinRtType.registerInterface(
+    "ITextRecognizer",
+    WinIIds.textRecognizerIid(),
+)
+    .addMethod("RecognizeTextFromImageAsync", new DynWinRtMethodSig()
+        .addIn(DynWinRtType.object())
+        .addOut(DynWinRtType.iAsyncOperation(
+            DynWinRtType.runtimeClass(
+                'Microsoft.Windows.AI.Imaging.RecognizedText',
+                WinIIds.recognizedTextIid(),
+            )
+        )))
+
+// ======================================================================
+// Use
+// ======================================================================
 
 async function main() {
-    // initWinappsdk(1, 8); // no need call MddBootstrap in packaged app
+    // initWinappsdk(1, 8); // no need in packaged app
     console.log(hasPackageIdentity() ? 'Has package identity' : 'No package identity');
-    const image = OcrDemo.pickImage();
-    const recognizer = await createRecognizer();
-    const imageBuffer = createImageBuffer(image);
-    const result = await recognizer.callSingleOut1(
-        6,
-        DynWinRtType.iAsyncOperation(WinIIds.iAsyncOperationRecognizedTextIid()),
-        imageBuffer).toPromise();
-    OcrDemo.printOcrLines(result);
+
+    // Create recognizer
+    const factory = DynWinRtValue.activationFactory('Microsoft.Windows.AI.Imaging.TextRecognizer')
+        .cast(WinIIds.iTextRecognizerStaticsIid())
+
+    const readyState = iTextRecognizerStatics.methodByName("GetReadyState").invoke(factory, [])
+    console.log('TextRecognizer ready state:', readyState.toNumber())
+
+    const recognizer = await iTextRecognizerStatics.methodByName("CreateAsync")
+        .invoke(factory, []).toPromise()
+
+    // Create image buffer from picked bitmap
+    const bitmap = OcrDemo.pickImage()
+    const ibFactory = DynWinRtValue.activationFactory('Microsoft.Graphics.Imaging.ImageBuffer')
+        .cast(WinIIds.iImageBufferStaticsIid())
+    const imageBuffer = iImageBufferStatics.methodByName("CreateForSoftwareBitmap")
+        .invoke(ibFactory, [bitmap])
+
+    // Recognize text
+    const result = await iTextRecognizer.methodByName("RecognizeTextFromImageAsync")
+        .invoke(recognizer, [imageBuffer]).toPromise()
+
+    OcrDemo.printOcrLines(result)
 }
 main();
